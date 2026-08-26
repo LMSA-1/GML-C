@@ -1,0 +1,3283 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Monde 3D - Immeubles</title>
+
+<style>
+html,body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#000;
+}
+
+canvas{
+    display:block;
+}
+
+#viseur{
+    position:fixed;
+    left:50%;
+    top:50%;
+    width:5px;
+    height:5px;
+    transform:translate(-50%,-50%);
+    border:2px solid white;
+    border-radius:50%;
+    z-index:30;
+    pointer-events:none;
+}
+
+#commandes{
+    position:fixed;
+    top:15px;
+    left:50%;
+    transform:translateX(-50%);
+    padding:10px 18px;
+    color:white;
+    background:rgba(0,0,0,.72);
+    border-radius:12px;
+    font:14px Arial;
+    z-index:30;
+    pointer-events:none;
+    text-align:center;
+}
+
+#vitesse{
+    position:fixed;
+    right:15px;
+    top:15px;
+    color:white;
+    background:rgba(0,0,0,.65);
+    padding:8px 12px;
+    border-radius:10px;
+    font:16px Arial;
+    z-index:30;
+}
+
+/* RADAR */
+
+#radar{
+    position:fixed;
+    left:18px;
+    bottom:18px;
+    width:190px;
+    height:190px;
+    background:rgba(0,0,0,.72);
+    border:3px solid rgba(255,255,255,.8);
+    border-radius:50%;
+    z-index:40;
+    overflow:hidden;
+    box-shadow:0 0 18px rgba(0,0,0,.9);
+}
+
+#radarCanvas{
+    width:100%;
+    height:100%;
+    display:block;
+}
+
+#radarTitre{
+    position:absolute;
+    left:50%;
+    top:6px;
+    transform:translateX(-50%);
+    color:white;
+    font:bold 11px Arial;
+    text-shadow:0 1px 3px #000;
+    pointer-events:none;
+}
+
+#radarJoueur{
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:10px;
+    height:10px;
+    background:red;
+    border:2px solid white;
+    border-radius:50%;
+    transform:translate(-50%,-50%);
+    box-shadow:0 0 8px red;
+    pointer-events:none;
+}
+
+/* CARTE */
+
+#menuCarte{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.82);
+    z-index:100;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    font-family:Arial;
+}
+
+#menuCarte.visible{
+    display:flex;
+}
+
+#carteCadre{
+    width:min(850px,90vw);
+    height:min(850px,90vh);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+}
+
+#titreCarte{
+    color:white;
+    font-size:30px;
+    font-weight:bold;
+    margin-bottom:18px;
+}
+
+#carte{
+    width:min(700px,78vw);
+    height:min(700px,78vw);
+    max-height:72vh;
+    background:#2fa83f;
+    border:6px solid #111;
+    box-shadow:0 0 30px #000;
+    position:relative;
+    overflow:hidden;
+}
+
+.ligneCarte{
+    position:absolute;
+    background:#000;
+    z-index:1;
+}
+
+.ligneVerticale{
+    top:0;
+    bottom:0;
+    width:5px;
+}
+
+.ligneHorizontale{
+    left:0;
+    right:0;
+    height:5px;
+}
+
+.blocCarte{
+    position:absolute;
+    background:#777;
+    border:1px solid #555;
+    box-sizing:border-box;
+    z-index:3;
+}
+
+#joueurCarte{
+    position:absolute;
+    width:14px;
+    height:14px;
+    background:red;
+    border:3px solid white;
+    border-radius:50%;
+    transform:translate(-50%,-50%);
+    z-index:10;
+    box-shadow:0 0 8px red;
+}
+</style>
+</head>
+
+<body>
+
+<div id="viseur"></div>
+
+<div id="commandes">
+↑ ↓ ← → Déplacement |
+3 appuis rapides = COURSE |
+Q/W Caméra |
+R/T Tourner |
+E Vue |
+Y Carte
+</div>
+
+<div id="vitesse">🚶 MARCHE</div>
+
+<div id="radar">
+    <canvas id="radarCanvas" width="380" height="380"></canvas>
+    <div id="radarTitre">RADAR</div>
+    <div id="radarJoueur"></div>
+</div>
+
+<div id="menuCarte">
+
+    <div id="carteCadre">
+
+        <div id="titreCarte">
+            🗺️ CARTE DU MONDE
+        </div>
+
+        <div id="carte">
+            <div id="joueurCarte"></div>
+        </div>
+
+        <div style="
+            margin-top:18px;
+            color:white;
+            font-size:15px;
+            background:rgba(255,255,255,.12);
+            padding:8px 16px;
+            border-radius:8px">
+            Appuie sur Y ou Échap pour fermer
+        </div>
+
+    </div>
+
+</div>
+
+<script type="module">
+
+import * as THREE from
+"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+
+
+/* =====================================================
+   MONDE
+===================================================== */
+
+const TAILLE_CUBE=1500;
+const DEMI_CUBE=TAILLE_CUBE/2;
+const solY=-DEMI_CUBE;
+
+const nombreCases=12;
+const espace=TAILLE_CUBE/nombreCases;
+
+const scene=new THREE.Scene();
+
+const camera=new THREE.PerspectiveCamera(
+    75,
+    innerWidth/innerHeight,
+    .1,
+    3000
+);
+
+const renderer=new THREE.WebGLRenderer({
+    antialias:false
+});
+
+renderer.setPixelRatio(
+    Math.min(devicePixelRatio,1.2)
+);
+
+renderer.setSize(
+    innerWidth,
+    innerHeight
+);
+
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+
+document.body.appendChild(
+    renderer.domElement
+);
+
+
+/* =====================================================
+   CIEL
+===================================================== */
+
+const loader=new THREE.TextureLoader();
+
+loader.setCrossOrigin("anonymous");
+
+const cielTexture=loader.load(
+"https://media.ouest-france.fr/v1/pictures/a7a7fb6c8e06451ddf269ee410f656d5-25454470.jpg?width=1260&client_id=eds&sign=932021968417f4769b15acf734f5c2cc9e962268effdd5bf4527620ed45c3d46"
+);
+
+const cielMaterial=
+    new THREE.MeshBasicMaterial({
+        map:cielTexture,
+        side:THREE.BackSide
+    });
+
+
+/* =====================================================
+   SOL
+===================================================== */
+
+const resolution=1024;
+
+const canvasSol=
+    document.createElement("canvas");
+
+canvasSol.width=resolution;
+canvasSol.height=resolution;
+
+const ctxSol=
+    canvasSol.getContext("2d");
+
+ctxSol.fillStyle="#2fa83f";
+
+ctxSol.fillRect(
+    0,
+    0,
+    resolution,
+    resolution
+);
+
+ctxSol.strokeStyle="#000";
+ctxSol.lineWidth=35;
+
+const tailleCase=
+    resolution/nombreCases;
+
+for(let i=0;i<=nombreCases;i++){
+
+    const p=i*tailleCase;
+
+    ctxSol.beginPath();
+    ctxSol.moveTo(p,0);
+    ctxSol.lineTo(p,resolution);
+    ctxSol.stroke();
+
+    ctxSol.beginPath();
+    ctxSol.moveTo(0,p);
+    ctxSol.lineTo(resolution,p);
+    ctxSol.stroke();
+}
+
+const textureSol=
+    new THREE.CanvasTexture(canvasSol);
+
+textureSol.colorSpace=
+    THREE.SRGBColorSpace;
+
+const solMaterial=
+    new THREE.MeshBasicMaterial({
+        map:textureSol,
+        side:THREE.BackSide
+    });
+
+
+const cube=new THREE.Mesh(
+    new THREE.BoxGeometry(
+        TAILLE_CUBE,
+        TAILLE_CUBE,
+        TAILLE_CUBE
+    ),
+    [
+        cielMaterial,
+        cielMaterial,
+        cielMaterial,
+        solMaterial,
+        cielMaterial,
+        cielMaterial
+    ]
+);
+
+scene.add(cube);
+
+
+/* =====================================================
+   ZONE DES ARBRES
+===================================================== */
+
+const caseDolineX=5;
+const caseDolineZ=5;
+
+const centreX=
+    -DEMI_CUBE+
+    (caseDolineX+.5)*espace;
+
+const centreZ=
+    -DEMI_CUBE+
+    (caseDolineZ+.5)*espace;
+
+const rayonZone=
+    espace*.44;
+
+
+/* =====================================================
+   COLLISIONS
+===================================================== */
+
+const objetsCollision=[];
+
+function ajouterCollision(
+    x,
+    z,
+    rayon,
+    type="objet"
+){
+
+    objetsCollision.push({
+        x:x,
+        z:z,
+        rayon:rayon,
+        type:type
+    });
+}
+
+
+/* =====================================================
+   ARBRES
+===================================================== */
+
+const arbres=[];
+
+function creerArbre(
+    x,
+    z,
+    echelle=1
+){
+
+    const arbre=
+        new THREE.Group();
+
+    const tronc=new THREE.Mesh(
+        new THREE.CylinderGeometry(
+            2.2*echelle,
+            3*echelle,
+            22*echelle,
+            7
+        ),
+        new THREE.MeshStandardMaterial({
+            color:0x6b4328,
+            roughness:1
+        })
+    );
+
+    tronc.position.y=
+        solY+
+        11*echelle;
+
+    arbre.add(tronc);
+
+
+    const feuillage=new THREE.Mesh(
+        new THREE.ConeGeometry(
+            11*echelle,
+            27*echelle,
+            8
+        ),
+        new THREE.MeshStandardMaterial({
+            color:0x176b2b,
+            roughness:1
+        })
+    );
+
+    feuillage.position.y=
+        solY+
+        32*echelle;
+
+    arbre.add(feuillage);
+
+
+    arbre.position.set(
+        x,
+        0,
+        z
+    );
+
+    scene.add(arbre);
+
+
+    ajouterCollision(
+        x,
+        z,
+        5.5*echelle,
+        "arbre"
+    );
+
+
+    arbres.push({
+        objet:arbre,
+        x:x,
+        z:z,
+        rayon:5.5*echelle
+    });
+}
+
+
+for(let i=0;i<95;i++){
+
+    const a=
+        Math.random()*
+        Math.PI*2;
+
+    const r=
+        Math.sqrt(Math.random())*
+        rayonZone;
+
+    const x=
+        centreX+
+        Math.cos(a)*r;
+
+    const z=
+        centreZ+
+        Math.sin(a)*r;
+
+    creerArbre(
+        x,
+        z,
+        .55+
+        Math.random()*.55
+    );
+}
+
+
+/* =====================================================
+   IMMEUBLES
+===================================================== */
+
+const blocs=
+    new THREE.Group();
+
+
+const blocMateriaux=[
+
+    new THREE.MeshStandardMaterial({
+        color:0x777777,
+        roughness:.85
+    }),
+
+    new THREE.MeshStandardMaterial({
+        color:0x9b5c42,
+        roughness:.85
+    }),
+
+    new THREE.MeshStandardMaterial({
+        color:0x4f6878,
+        roughness:.85
+    }),
+
+    new THREE.MeshStandardMaterial({
+        color:0x806f55,
+        roughness:.85
+    })
+];
+
+
+const blocTaille=28;
+const blocHauteur=80;
+
+
+/* =====================================================
+   LISTE DES IMMEUBLES
+===================================================== */
+
+const immeubles=[];
+
+for(
+    let x=-DEMI_CUBE+espace/2;
+    x<DEMI_CUBE;
+    x+=espace
+){
+
+    for(
+        let z=-DEMI_CUBE+espace/2;
+        z<DEMI_CUBE;
+        z+=espace
+    ){
+
+        const dansZone=
+            Math.abs(x-centreX)<
+            espace*.47 &&
+            Math.abs(z-centreZ)<
+            espace*.47;
+
+        if(dansZone)
+            continue;
+
+
+        const ecart=
+            blocTaille+8;
+
+        const positions=[
+            [-ecart/2,-ecart/2],
+            [ ecart/2,-ecart/2],
+            [-ecart/2, ecart/2],
+            [ ecart/2, ecart/2]
+        ];
+
+
+        for(const p of positions){
+
+            immeubles.push({
+                x:x+p[0],
+                z:z+p[1],
+                materiau:
+                    Math.floor(
+                        Math.random()*
+                        blocMateriaux.length
+                    )
+            });
+        }
+    }
+}
+
+
+/* =====================================================
+   CORPS DES IMMEUBLES
+===================================================== */
+
+const geometrieImmeuble=
+    new THREE.BoxGeometry(
+        blocTaille,
+        blocHauteur,
+        blocTaille
+    );
+
+
+const meshesImmeubles=[];
+
+
+for(
+    let m=0;
+    m<blocMateriaux.length;
+    m++
+){
+
+    const liste=
+        immeubles.filter(
+            b=>b.materiau===m
+        );
+
+    if(liste.length===0)
+        continue;
+
+
+    const mesh=
+        new THREE.InstancedMesh(
+            geometrieImmeuble,
+            blocMateriaux[m],
+            liste.length
+        );
+
+    const matrice=
+        new THREE.Matrix4();
+
+    for(
+        let i=0;
+        i<liste.length;
+        i++
+    ){
+
+        matrice.makeTranslation(
+            liste[i].x,
+            solY+
+            blocHauteur/2,
+            liste[i].z
+        );
+
+        mesh.setMatrixAt(
+            i,
+            matrice
+        );
+    }
+
+    mesh.instanceMatrix.needsUpdate=true;
+
+    mesh.castShadow=true;
+    mesh.receiveShadow=true;
+
+    blocs.add(mesh);
+
+    meshesImmeubles.push(mesh);
+}
+
+
+/* =====================================================
+   COLLISIONS DES IMMEUBLES
+===================================================== */
+
+for(const b of immeubles){
+
+    ajouterCollision(
+        b.x,
+        b.z,
+        blocTaille/2,
+        "bloc"
+    );
+}
+
+scene.add(blocs);
+
+
+/* =====================================================
+   FENÊTRES
+   INSTANCEDMESH POUR ÉVITER TROP DE MESHES
+===================================================== */
+
+const fenetreMateriau=
+    new THREE.MeshStandardMaterial({
+        color:0x72cfff,
+        roughness:.25,
+        metalness:.05
+    });
+
+
+const geometrieFenetre=
+    new THREE.BoxGeometry(
+        4.2,
+        5.5,
+        .35
+    );
+
+
+/*
+   16 fenêtres par immeuble :
+   2 fenêtres × 2 niveaux × 4 côtés
+*/
+
+const nombreFenetres=
+    immeubles.length*16;
+
+
+const fenetres=
+    new THREE.InstancedMesh(
+        geometrieFenetre,
+        fenetreMateriau,
+        nombreFenetres
+    );
+
+fenetres.castShadow=false;
+fenetres.receiveShadow=false;
+
+
+const matriceFenetre=
+    new THREE.Matrix4();
+
+const rotationY=
+    new THREE.Matrix4();
+
+const positionFenetre=
+    new THREE.Vector3();
+
+let indexFenetre=0;
+
+
+for(const b of immeubles){
+
+    const baseY=
+        solY+
+        blocHauteur;
+
+
+    const niveaux=[
+        solY+27,
+        solY+53
+    ];
+
+
+    for(const y of niveaux){
+
+        /* =============================================
+           FACE AVANT
+        ============================================= */
+
+        for(const px of [-7,7]){
+
+            positionFenetre.set(
+                b.x+px,
+                y,
+                b.z-blocTaille/2-.18
+            );
+
+            matriceFenetre.compose(
+                positionFenetre,
+                new THREE.Quaternion(),
+                new THREE.Vector3(1,1,1)
+            );
+
+            fenetres.setMatrixAt(
+                indexFenetre++,
+                matriceFenetre
+            );
+        }
+
+
+        /* =============================================
+           FACE ARRIÈRE
+        ============================================= */
+
+        for(const px of [-7,7]){
+
+            positionFenetre.set(
+                b.x+px,
+                y,
+                b.z+blocTaille/2+.18
+            );
+
+            matriceFenetre.compose(
+                positionFenetre,
+                new THREE.Quaternion(),
+                new THREE.Vector3(1,1,1)
+            );
+
+            fenetres.setMatrixAt(
+                indexFenetre++,
+                matriceFenetre
+            );
+        }
+
+
+        /* =============================================
+           CÔTÉ GAUCHE
+        ============================================= */
+
+        for(const pz of [-7,7]){
+
+            positionFenetre.set(
+                b.x-blocTaille/2-.18,
+                y,
+                b.z+pz
+            );
+
+            matriceFenetre.compose(
+                positionFenetre,
+                new THREE.Quaternion()
+                    .setFromAxisAngle(
+                        new THREE.Vector3(0,1,0),
+                        Math.PI/2
+                    ),
+                new THREE.Vector3(1,1,1)
+            );
+
+            fenetres.setMatrixAt(
+                indexFenetre++,
+                matriceFenetre
+            );
+        }
+
+
+        /* =============================================
+           CÔTÉ DROIT
+        ============================================= */
+
+        for(const pz of [-7,7]){
+
+            positionFenetre.set(
+                b.x+blocTaille/2+.18,
+                y,
+                b.z+pz
+            );
+
+            matriceFenetre.compose(
+                positionFenetre,
+                new THREE.Quaternion()
+                    .setFromAxisAngle(
+                        new THREE.Vector3(0,1,0),
+                        Math.PI/2
+                    ),
+                new THREE.Vector3(1,1,1)
+            );
+
+            fenetres.setMatrixAt(
+                indexFenetre++,
+                matriceFenetre
+            );
+        }
+    }
+}
+
+fenetres.count=indexFenetre;
+fenetres.instanceMatrix.needsUpdate=true;
+
+scene.add(fenetres);
+
+
+/* =====================================================
+   PORTES
+===================================================== */
+
+const porteMateriau=
+    new THREE.MeshStandardMaterial({
+        color:0x321b12,
+        roughness:.75
+    });
+
+
+const geometriePorte=
+    new THREE.BoxGeometry(
+        5.5,
+        10,
+        .5
+    );
+
+
+const portes=
+    new THREE.InstancedMesh(
+        geometriePorte,
+        porteMateriau,
+        immeubles.length
+    );
+
+
+const matricePorte=
+    new THREE.Matrix4();
+
+const positionPorte=
+    new THREE.Vector3();
+
+
+for(
+    let i=0;
+    i<immeubles.length;
+    i++
+){
+
+    const b=
+        immeubles[i];
+
+
+    positionPorte.set(
+        b.x,
+        solY+5,
+        b.z-blocTaille/2-.25
+    );
+
+
+    matricePorte.compose(
+        positionPorte,
+        new THREE.Quaternion(),
+        new THREE.Vector3(1,1,1)
+    );
+
+
+    portes.setMatrixAt(
+        i,
+        matricePorte
+    );
+}
+
+portes.instanceMatrix.needsUpdate=true;
+
+scene.add(portes);
+
+
+/* =====================================================
+   LUMIÈRES
+===================================================== */
+
+scene.add(
+    new THREE.HemisphereLight(
+        0xffffff,
+        0x444444,
+        2
+    )
+);
+
+const soleil=
+    new THREE.DirectionalLight(
+        0xffffff,
+        2.2
+    );
+
+soleil.position.set(
+    300,
+    600,
+    250
+);
+
+soleil.castShadow=true;
+
+soleil.shadow.mapSize.width=1024;
+soleil.shadow.mapSize.height=1024;
+
+scene.add(soleil);
+
+
+/* =====================================================
+   MATÉRIAUX DU JOUEUR
+===================================================== */
+
+const peau=
+    new THREE.MeshStandardMaterial({
+        color:0xb8754f,
+        roughness:.8
+    });
+
+const haut=
+    new THREE.MeshStandardMaterial({
+        color:0x111111,
+        roughness:.8
+    });
+
+const pantalon=
+    new THREE.MeshStandardMaterial({
+        color:0x123b70,
+        roughness:.85
+    });
+
+const chaussure=
+    new THREE.MeshStandardMaterial({
+        color:0x050505,
+        roughness:.7
+    });
+
+const articulation=
+    new THREE.MeshStandardMaterial({
+        color:0x593b2a,
+        roughness:.9
+    });
+
+
+/* =====================================================
+   PERSONNAGE
+===================================================== */
+
+function creerPersonnage(
+    couleurPeau,
+    couleurHaut,
+    couleurPantalon,
+    couleurChaussure,
+    couleurCheveux
+){
+
+    const personnage=
+        new THREE.Group();
+
+
+    const matPeau=peau.clone();
+    matPeau.color.set(couleurPeau);
+
+    const matHaut=haut.clone();
+    matHaut.color.set(couleurHaut);
+
+    const matPantalon=pantalon.clone();
+    matPantalon.color.set(couleurPantalon);
+
+    const matChaussure=chaussure.clone();
+    matChaussure.color.set(couleurChaussure);
+
+    const matArticulation=
+        articulation.clone();
+
+
+    const matCheveux=
+        new THREE.MeshStandardMaterial({
+            color:couleurCheveux,
+            roughness:.8
+        });
+
+
+    function piece(
+        geometrie,
+        materiau,
+        x,
+        y,
+        z
+    ){
+
+        const o=
+            new THREE.Mesh(
+                geometrie,
+                materiau
+            );
+
+        o.position.set(
+            x,
+            y,
+            z
+        );
+
+        o.castShadow=true;
+        o.receiveShadow=true;
+
+        personnage.add(o);
+
+        return o;
+    }
+
+
+    /* CORPS */
+
+    piece(
+        new THREE.BoxGeometry(
+            1.05,
+            .55,
+            .55
+        ),
+        matPantalon,
+        0,
+        2.15,
+        0
+    );
+
+
+    piece(
+        new THREE.CylinderGeometry(
+            .52,
+            .43,
+            1.65,
+            8
+        ),
+        matHaut,
+        0,
+        3.15,
+        0
+    );
+
+
+    piece(
+        new THREE.CylinderGeometry(
+            .18,
+            .18,
+            .28,
+            8
+        ),
+        matPeau,
+        0,
+        4.08,
+        0
+    );
+
+
+    piece(
+        new THREE.SphereGeometry(
+            .48,
+            12,
+            8
+        ),
+        matPeau,
+        0,
+        4.65,
+        0
+    );
+
+
+    /* CHEVEUX */
+
+    const cheveux=piece(
+        new THREE.SphereGeometry(
+            .51,
+            12,
+            8,
+            0,
+            Math.PI*2,
+            0,
+            Math.PI*.58
+        ),
+        matCheveux,
+        0,
+        4.78,
+        0
+    );
+
+    cheveux.scale.set(
+        1.02,
+        .72,
+        1.02
+    );
+
+
+    for(let i=-3;i<=3;i++){
+
+        const meche=piece(
+            new THREE.ConeGeometry(
+                .075,
+                .28+
+                Math.abs(i)*.025,
+                5
+            ),
+            matCheveux,
+            i*.11,
+            5.03+
+            Math.abs(i)*.015,
+            -.34
+        );
+
+        meche.rotation.x=-.35;
+    }
+
+
+    /* VISAGE */
+
+    const canvasVisage=
+        document.createElement("canvas");
+
+    canvasVisage.width=128;
+    canvasVisage.height=128;
+
+    const ctx=
+        canvasVisage.getContext("2d");
+
+    ctx.clearRect(
+        0,
+        0,
+        128,
+        128
+    );
+
+    ctx.strokeStyle="#111";
+    ctx.fillStyle="#111";
+
+    ctx.lineWidth=5;
+    ctx.lineCap="round";
+
+
+    ctx.beginPath();
+    ctx.moveTo(27,53);
+    ctx.lineTo(52,50);
+    ctx.stroke();
+
+
+    ctx.beginPath();
+    ctx.moveTo(76,50);
+    ctx.lineTo(101,53);
+    ctx.stroke();
+
+
+    ctx.beginPath();
+    ctx.arc(
+        45,
+        52,
+        3,
+        0,
+        Math.PI*2
+    );
+    ctx.fill();
+
+
+    ctx.beginPath();
+    ctx.arc(
+        83,
+        52,
+        3,
+        0,
+        Math.PI*2
+    );
+    ctx.fill();
+
+
+    ctx.lineWidth=3;
+
+    ctx.beginPath();
+    ctx.moveTo(64,55);
+    ctx.lineTo(61,69);
+    ctx.lineTo(67,69);
+    ctx.stroke();
+
+
+    ctx.lineWidth=4;
+
+    ctx.beginPath();
+    ctx.moveTo(50,85);
+    ctx.lineTo(78,85);
+    ctx.stroke();
+
+
+    const textureVisage=
+        new THREE.CanvasTexture(
+            canvasVisage
+        );
+
+    textureVisage.colorSpace=
+        THREE.SRGBColorSpace;
+
+
+    const visageMaterial=
+        new THREE.MeshBasicMaterial({
+            map:textureVisage,
+            transparent:true,
+            depthWrite:false
+        });
+
+
+    piece(
+        new THREE.PlaneGeometry(
+            .72,
+            .72
+        ),
+        visageMaterial,
+        0,
+        4.66,
+        -.465
+    );
+
+
+    /* ÉPAULES */
+
+    piece(
+        new THREE.SphereGeometry(
+            .25,
+            8,
+            8
+        ),
+        matHaut,
+        -.58,
+        3.72,
+        0
+    );
+
+    piece(
+        new THREE.SphereGeometry(
+            .25,
+            8,
+            8
+        ),
+        matHaut,
+        .58,
+        3.72,
+        0
+    );
+
+
+    /* BRAS */
+
+    const brasG=piece(
+        new THREE.CylinderGeometry(
+            .14,
+            .14,
+            1.25,
+            8
+        ),
+        matHaut,
+        -.72,
+        3.12,
+        0
+    );
+
+    const brasD=piece(
+        new THREE.CylinderGeometry(
+            .14,
+            .14,
+            1.25,
+            8
+        ),
+        matHaut,
+        .72,
+        3.12,
+        0
+    );
+
+
+    const coudeG=piece(
+        new THREE.SphereGeometry(
+            .16,
+            8,
+            8
+        ),
+        matArticulation,
+        -.72,
+        2.48,
+        0
+    );
+
+    const coudeD=piece(
+        new THREE.SphereGeometry(
+            .16,
+            8,
+            8
+        ),
+        matArticulation,
+        .72,
+        2.48,
+        0
+    );
+
+
+    const avantBrasG=piece(
+        new THREE.CylinderGeometry(
+            .12,
+            .12,
+            1.15,
+            8
+        ),
+        matPeau,
+        -.72,
+        2.35,
+        0
+    );
+
+    const avantBrasD=piece(
+        new THREE.CylinderGeometry(
+            .12,
+            .12,
+            1.15,
+            8
+        ),
+        matPeau,
+        .72,
+        2.35,
+        0
+    );
+
+
+    const mainG=piece(
+        new THREE.SphereGeometry(
+            .18,
+            8,
+            8
+        ),
+        matPeau,
+        -.72,
+        1.72,
+        0
+    );
+
+    const mainD=piece(
+        new THREE.SphereGeometry(
+            .18,
+            8,
+            8
+        ),
+        matPeau,
+        .72,
+        1.72,
+        0
+    );
+
+
+    /* JAMBES */
+
+    const cuisseG=piece(
+        new THREE.CylinderGeometry(
+            .20,
+            .17,
+            1.5,
+            8
+        ),
+        matPantalon,
+        -.30,
+        1.48,
+        0
+    );
+
+    const cuisseD=piece(
+        new THREE.CylinderGeometry(
+            .20,
+            .17,
+            1.5,
+            8
+        ),
+        matPantalon,
+        .30,
+        1.48,
+        0
+    );
+
+
+    const genouG=piece(
+        new THREE.SphereGeometry(
+            .19,
+            8,
+            8
+        ),
+        matArticulation,
+        -.30,
+        .83,
+        0
+    );
+
+    const genouD=piece(
+        new THREE.SphereGeometry(
+            .19,
+            8,
+            8
+        ),
+        matArticulation,
+        .30,
+        .83,
+        0
+    );
+
+
+    const molletG=piece(
+        new THREE.CylinderGeometry(
+            .16,
+            .13,
+            1.35,
+            8
+        ),
+        matPantalon,
+        -.30,
+        .10,
+        0
+    );
+
+    const molletD=piece(
+        new THREE.CylinderGeometry(
+            .16,
+            .13,
+            1.35,
+            8
+        ),
+        matPantalon,
+        .30,
+        .10,
+        0
+    );
+
+
+    const chevilleG=piece(
+        new THREE.SphereGeometry(
+            .13,
+            8,
+            8
+        ),
+        matArticulation,
+        -.30,
+        -.57,
+        0
+    );
+
+    const chevilleD=piece(
+        new THREE.SphereGeometry(
+            .13,
+            8,
+            8
+        ),
+        matArticulation,
+        .30,
+        -.57,
+        0
+    );
+
+
+    const piedG=piece(
+        new THREE.BoxGeometry(
+            .38,
+            .18,
+            .65
+        ),
+        matChaussure,
+        -.30,
+        -.68,
+        -.12
+    );
+
+    const piedD=piece(
+        new THREE.BoxGeometry(
+            .38,
+            .18,
+            .65
+        ),
+        matChaussure,
+        .30,
+        -.68,
+        -.12
+    );
+
+
+    personnage.userData.animation={
+
+        cuisseG,
+        cuisseD,
+
+        genouG,
+        genouD,
+
+        molletG,
+        molletD,
+
+        chevilleG,
+        chevilleD,
+
+        piedG,
+        piedD,
+
+        brasG,
+        brasD,
+
+        coudeG,
+        coudeD,
+
+        avantBrasG,
+        avantBrasD,
+
+        mainG,
+        mainD,
+
+        temps:0
+    };
+
+
+    return personnage;
+}
+
+
+/* =====================================================
+   JOUEUR
+===================================================== */
+
+const joueur=
+    creerPersonnage(
+        0xb8754f,
+        0x111111,
+        0x123b70,
+        0x050505,
+        0x111111
+    );
+
+joueur.position.set(
+    0,
+    solY+.5,
+    0
+);
+
+scene.add(joueur);
+
+
+/* =====================================================
+   ANIMATION
+===================================================== */
+
+function animationPersonnage(
+    personnage,
+    delta,
+    mouvement,
+    course
+){
+
+    const a=
+        personnage.userData.animation;
+
+
+    if(!mouvement){
+
+        const amortissement=.78;
+
+        a.cuisseG.rotation.x*=amortissement;
+        a.cuisseD.rotation.x*=amortissement;
+
+        a.molletG.rotation.x*=amortissement;
+        a.molletD.rotation.x*=amortissement;
+
+        a.brasG.rotation.x*=amortissement;
+        a.brasD.rotation.x*=amortissement;
+
+        a.avantBrasG.rotation.x*=amortissement;
+        a.avantBrasD.rotation.x*=amortissement;
+
+        return;
+    }
+
+
+    a.temps+=
+        delta*
+        (course?11:6);
+
+
+    const p=
+        Math.sin(a.temps);
+
+    const p2=
+        Math.sin(
+            a.temps+
+            Math.PI
+        );
+
+
+    const amplitude=
+        course?.62:.42;
+
+
+    a.cuisseG.rotation.x=
+        p*amplitude;
+
+    a.cuisseD.rotation.x=
+        p2*amplitude;
+
+
+    const flexG=
+        Math.max(0,p)*.45;
+
+    const flexD=
+        Math.max(0,p2)*.45;
+
+
+    a.molletG.rotation.x=
+        -flexG;
+
+    a.molletD.rotation.x=
+        -flexD;
+
+
+    a.brasG.rotation.x=
+        -p*amplitude*.72;
+
+    a.brasD.rotation.x=
+        -p2*amplitude*.72;
+
+
+    a.avantBrasG.rotation.x=
+        -p*amplitude*.30;
+
+    a.avantBrasD.rotation.x=
+        -p2*amplitude*.30;
+
+
+    a.coudeG.rotation.z=
+        Math.max(0,p)*.12;
+
+    a.coudeD.rotation.z=
+        Math.max(0,p2)*.12;
+
+
+    a.piedG.position.y=
+        -.68+
+        Math.max(0,p)*
+        (course?.22:.13);
+
+    a.piedD.position.y=
+        -.68+
+        Math.max(0,p2)*
+        (course?.22:.13);
+
+
+    a.piedG.position.z=
+        -.12+
+        Math.max(0,p)*
+        (course?.18:.10);
+
+    a.piedD.position.z=
+        -.12+
+        Math.max(0,p2)*
+        (course?.18:.10);
+}
+
+
+/* =====================================================
+   NPC
+===================================================== */
+
+const npcs=[];
+
+const couleursNPC=[
+
+    [0xb8754f,0x6b1f1f,0x183d70,0x050505,0x24150f],
+
+    [0x8c5a3c,0x173d28,0x39286b,0x171717,0x151515],
+
+    [0xc58a62,0x43246b,0x173c3c,0x202020,0x301b10],
+
+    [0x6f402c,0x263d7a,0x6b351e,0x090909,0x0d0d0d],
+
+    [0xa96845,0x164d58,0x283c78,0x111111,0x402010],
+
+    [0xd0966e,0x593015,0x194f30,0x080808,0x181818],
+
+    [0x75452f,0x242424,0x5b2248,0x111111,0x0c0c0c],
+
+    [0xb97751,0x193d64,0x493d18,0x050505,0x28140b]
+];
+
+
+function creerNPC(
+    x,
+    z,
+    index
+){
+
+    const c=
+        couleursNPC[
+            index%
+            couleursNPC.length
+        ];
+
+
+    const npc=
+        creerPersonnage(
+            c[0],
+            c[1],
+            c[2],
+            c[3],
+            c[4]
+        );
+
+
+    npc.scale.set(
+        .95,
+        .95,
+        .95
+    );
+
+
+    npc.position.set(
+        x,
+        solY+.5,
+        z
+    );
+
+
+    scene.add(npc);
+
+
+    npcs.push({
+
+        personnage:npc,
+
+        phase:
+            Math.random()*
+            Math.PI*2,
+
+        vitesse:
+            .65+
+            Math.random()*.45,
+
+        rayon:2.5,
+
+        direction:
+            Math.random()*
+            Math.PI*2
+    });
+}
+
+
+/* =====================================================
+   COLLISION
+===================================================== */
+
+const rayonJoueur=.65;
+
+
+function collisionPosition(
+    x,
+    z,
+    rayon,
+    ignorerNPC=null
+){
+
+    for(
+        const o of objetsCollision
+    ){
+
+        if(o.type==="bloc"){
+
+            const demi=
+                o.rayon;
+
+            const procheX=
+                THREE.MathUtils.clamp(
+                    x,
+                    o.x-demi,
+                    o.x+demi
+                );
+
+            const procheZ=
+                THREE.MathUtils.clamp(
+                    z,
+                    o.z-demi,
+                    o.z+demi
+                );
+
+            const dx=
+                x-procheX;
+
+            const dz=
+                z-procheZ;
+
+
+            if(
+                dx*dx+
+                dz*dz<
+                rayon*rayon
+            ){
+
+                return true;
+            }
+
+        }else{
+
+            const dx=
+                x-o.x;
+
+            const dz=
+                z-o.z;
+
+
+            if(
+                dx*dx+
+                dz*dz<
+                (rayon+o.rayon)*
+                (rayon+o.rayon)
+            ){
+
+                return true;
+            }
+        }
+    }
+
+
+    for(
+        const n of npcs
+    ){
+
+        if(n===ignorerNPC)
+            continue;
+
+
+        const dx=
+            x-
+            n.personnage.position.x;
+
+        const dz=
+            z-
+            n.personnage.position.z;
+
+
+        if(
+            dx*dx+
+            dz*dz<
+            (rayon+n.rayon)*
+            (rayon+n.rayon)
+        ){
+
+            return true;
+        }
+    }
+
+
+    if(
+        ignorerNPC!==null
+    ){
+
+        const dx=
+            x-
+            joueur.position.x;
+
+        const dz=
+            z-
+            joueur.position.z;
+
+
+        if(
+            dx*dx+
+            dz*dz<
+            (rayon+rayonJoueur)*
+            (rayon+rayonJoueur)
+        ){
+
+            return true;
+        }
+    }
+
+
+    return false;
+}
+
+
+/* =====================================================
+   PLACEMENT NPC
+===================================================== */
+
+for(let i=0;i<50;i++){
+
+    let placee=false;
+
+    for(
+        let tentative=0;
+        tentative<60&&!placee;
+        tentative++
+    ){
+
+        const x=
+            -DEMI_CUBE+
+            20+
+            Math.random()*
+            (TAILLE_CUBE-40);
+
+        const z=
+            -DEMI_CUBE+
+            20+
+            Math.random()*
+            (TAILLE_CUBE-40);
+
+
+        let libre=true;
+
+
+        for(const arbre of arbres){
+
+            const dx=
+                x-arbre.x;
+
+            const dz=
+                z-arbre.z;
+
+
+            if(
+                Math.hypot(dx,dz)<
+                arbre.rayon+3
+            ){
+
+                libre=false;
+                break;
+            }
+        }
+
+
+        if(libre){
+
+            if(
+                collisionPosition(
+                    x,
+                    z,
+                    2.5
+                )
+            ){
+
+                libre=false;
+            }
+        }
+
+
+        if(libre){
+
+            const dx=
+                x-joueur.position.x;
+
+            const dz=
+                z-joueur.position.z;
+
+            if(
+                Math.hypot(dx,dz)<8
+            ){
+
+                libre=false;
+            }
+        }
+
+
+        if(libre){
+
+            creerNPC(
+                x,
+                z,
+                i
+            );
+
+            placee=true;
+        }
+    }
+}
+
+
+/* =====================================================
+   DÉPLACEMENT NPC
+===================================================== */
+
+function deplacerNPC(delta){
+
+    for(
+        const n of npcs
+    ){
+
+        const p=
+            n.personnage;
+
+
+        const directionX=
+            Math.sin(n.direction);
+
+        const directionZ=
+            Math.cos(n.direction);
+
+
+        const vitesse=
+            n.vitesse*2;
+
+
+        const nx=
+            p.position.x+
+            directionX*
+            vitesse*
+            delta;
+
+        const nz=
+            p.position.z+
+            directionZ*
+            vitesse*
+            delta;
+
+
+        let mouvement=false;
+
+
+        if(
+            !collisionPosition(
+                nx,
+                p.position.z,
+                n.rayon,
+                n
+            )
+        ){
+
+            p.position.x=
+                nx;
+
+            mouvement=true;
+
+        }else{
+
+            n.direction+=
+                (Math.random()-.5)*
+                Math.PI;
+        }
+
+
+        if(
+            !collisionPosition(
+                p.position.x,
+                nz,
+                n.rayon,
+                n
+            )
+        ){
+
+            p.position.z=
+                nz;
+
+            mouvement=true;
+
+        }else{
+
+            n.direction+=
+                (Math.random()-.5)*
+                Math.PI;
+        }
+
+
+        const marge=3;
+
+
+        if(
+            p.position.x<
+            -DEMI_CUBE+marge
+        ){
+
+            p.position.x=
+                -DEMI_CUBE+marge;
+
+            n.direction=
+                Math.random()*
+                Math.PI*2;
+        }
+
+
+        if(
+            p.position.x>
+            DEMI_CUBE-marge
+        ){
+
+            p.position.x=
+                DEMI_CUBE-marge;
+
+            n.direction=
+                Math.random()*
+                Math.PI*2;
+        }
+
+
+        if(
+            p.position.z<
+            -DEMI_CUBE+marge
+        ){
+
+            p.position.z=
+                -DEMI_CUBE+marge;
+
+            n.direction=
+                Math.random()*
+                Math.PI*2;
+        }
+
+
+        if(
+            p.position.z>
+            DEMI_CUBE-marge
+        ){
+
+            p.position.z=
+                DEMI_CUBE-marge;
+
+            n.direction=
+                Math.random()*
+                Math.PI*2;
+        }
+
+
+        p.rotation.y=
+            n.direction;
+
+
+        animationPersonnage(
+            p,
+            delta,
+            mouvement,
+            false
+        );
+    }
+}
+
+
+/* =====================================================
+   TOUCHES
+===================================================== */
+
+const touches={
+
+    ArrowUp:false,
+    ArrowDown:false,
+    ArrowLeft:false,
+    ArrowRight:false,
+
+    q:false,
+    w:false,
+    e:false,
+    r:false,
+    t:false
+};
+
+
+const compteur={
+
+    ArrowUp:0,
+    ArrowDown:0,
+    ArrowLeft:0,
+    ArrowRight:0
+};
+
+
+const dernier={
+
+    ArrowUp:0,
+    ArrowDown:0,
+    ArrowLeft:0,
+    ArrowRight:0
+};
+
+
+let course=false;
+
+let carteOuverte=false;
+
+let rotationHorizontale=0;
+
+let rotationVerticale=0;
+
+let modeVue=0;
+
+let toucheEPrecedente=false;
+
+const vitesseRotation=.035;
+
+const limiteVerticale=
+    Math.PI/2.5;
+
+const vitesseSuiviCamera=.10;
+
+
+/* =====================================================
+   DÉPLACEMENT JOUEUR
+===================================================== */
+
+function deplacerJoueur(delta){
+
+    let avant=0;
+    let cote=0;
+
+
+    if(touches.ArrowUp)
+        avant++;
+
+    if(touches.ArrowDown)
+        avant--;
+
+    if(touches.ArrowLeft)
+        cote--;
+
+    if(touches.ArrowRight)
+        cote++;
+
+
+    const move=
+        Math.abs(avant)+
+        Math.abs(cote)>0;
+
+
+    const vitesse=
+        course?
+        2.3:
+        .35;
+
+
+    document.getElementById(
+        "vitesse"
+    ).textContent=
+        course?
+        "🏃 COURSE":
+        "🚶 MARCHE";
+
+
+    avant*=vitesse;
+    cote*=vitesse;
+
+
+    const da=
+        new THREE.Vector3(
+            Math.sin(rotationHorizontale),
+            0,
+            -Math.cos(rotationHorizontale)
+        );
+
+
+    const dd=
+        new THREE.Vector3(
+            Math.cos(rotationHorizontale),
+            0,
+            Math.sin(rotationHorizontale)
+        );
+
+
+    const dx=
+        da.x*avant+
+        dd.x*cote;
+
+    const dz=
+        da.z*avant+
+        dd.z*cote;
+
+
+    const nx=
+        joueur.position.x+
+        dx*delta*60;
+
+    const nz=
+        joueur.position.z+
+        dz*delta*60;
+
+
+    if(
+        !collisionPosition(
+            nx,
+            joueur.position.z,
+            rayonJoueur
+        )
+    ){
+
+        joueur.position.x=
+            nx;
+    }
+
+
+    if(
+        !collisionPosition(
+            joueur.position.x,
+            nz,
+            rayonJoueur
+        )
+    ){
+
+        joueur.position.z=
+            nz;
+    }
+
+
+    if(
+        Math.hypot(dx,dz)>.001
+    ){
+
+        joueur.rotation.y=
+            Math.atan2(dx,dz)+
+            Math.PI;
+
+
+        const cible=
+            Math.atan2(dx,-dz);
+
+
+        let diff=
+            cible-
+            rotationHorizontale;
+
+
+        while(diff>Math.PI)
+            diff-=Math.PI*2;
+
+        while(diff<-Math.PI)
+            diff+=Math.PI*2;
+
+
+        rotationHorizontale+=
+            diff*
+            vitesseSuiviCamera;
+    }
+
+
+    animationPersonnage(
+        joueur,
+        delta,
+        move,
+        course
+    );
+
+
+    joueur.position.x=
+        THREE.MathUtils.clamp(
+            joueur.position.x,
+            -DEMI_CUBE+2,
+            DEMI_CUBE-2
+        );
+
+
+    joueur.position.z=
+        THREE.MathUtils.clamp(
+            joueur.position.z,
+            -DEMI_CUBE+2,
+            DEMI_CUBE-2
+        );
+
+
+    joueur.position.y=
+        solY+.5;
+}
+
+
+/* =====================================================
+   CAMÉRA
+===================================================== */
+
+function changerVue(){
+
+    if(
+        touches.e &&
+        !toucheEPrecedente
+    ){
+
+        modeVue++;
+
+        if(modeVue>2)
+            modeVue=0;
+    }
+
+
+    toucheEPrecedente=
+        touches.e;
+}
+
+
+function controlerCamera(){
+
+    if(touches.q)
+        rotationVerticale+=
+            vitesseRotation;
+
+    if(touches.w)
+        rotationVerticale-=
+            vitesseRotation;
+
+    if(touches.r)
+        rotationHorizontale+=
+            vitesseRotation;
+
+    if(touches.t)
+        rotationHorizontale-=
+            vitesseRotation;
+
+
+    rotationVerticale=
+        THREE.MathUtils.clamp(
+            rotationVerticale,
+            -limiteVerticale,
+            limiteVerticale
+        );
+}
+
+
+function suivreJoueur(){
+
+    const distance=
+        modeVue===0?
+        12:
+        modeVue===1?
+        5:
+        0;
+
+
+    const hauteur=
+        modeVue===0?
+        5.5:
+        modeVue===1?
+        3.5:
+        4.5;
+
+
+    const d=
+        new THREE.Vector3(
+            Math.sin(rotationHorizontale),
+            Math.sin(rotationVerticale),
+            -Math.cos(rotationHorizontale)
+        ).normalize();
+
+
+    camera.position.set(
+        joueur.position.x,
+        joueur.position.y+
+        hauteur,
+        joueur.position.z
+    );
+
+
+    if(modeVue!==2){
+
+        camera.position.sub(
+            d.clone().multiplyScalar(
+                distance
+            )
+        );
+    }
+
+
+    const cible=
+        joueur.position.clone();
+
+    cible.y+=3;
+
+
+    cible.add(
+        d.clone().multiplyScalar(20)
+    );
+
+
+    camera.lookAt(cible);
+}
+
+
+/* =====================================================
+   CARTE
+===================================================== */
+
+const menuCarte=
+    document.getElementById(
+        "menuCarte"
+    );
+
+const carte=
+    document.getElementById(
+        "carte"
+    );
+
+const joueurCarte=
+    document.getElementById(
+        "joueurCarte"
+    );
+
+
+function basculerCarte(){
+
+    carteOuverte=
+        !carteOuverte;
+
+    menuCarte.classList.toggle(
+        "visible",
+        carteOuverte
+    );
+
+
+    if(carteOuverte)
+        mettreAJourCarte();
+}
+
+
+/* =====================================================
+   LIGNES CARTE
+===================================================== */
+
+for(
+    let i=0;
+    i<=nombreCases;
+    i++
+){
+
+    const lv=
+        document.createElement("div");
+
+    lv.className=
+        "ligneCarte ligneVerticale";
+
+    lv.style.left=
+        i/nombreCases*100+
+        "%";
+
+    carte.appendChild(lv);
+
+
+    const lh=
+        document.createElement("div");
+
+    lh.className=
+        "ligneCarte ligneHorizontale";
+
+    lh.style.top=
+        i/nombreCases*100+
+        "%";
+
+    carte.appendChild(lh);
+}
+
+
+/* =====================================================
+   IMMEUBLES CARTE
+===================================================== */
+
+for(
+    let r=0;
+    r<nombreCases;
+    r++
+){
+
+    for(
+        let c=0;
+        c<nombreCases;
+        c++
+    ){
+
+        if(
+            r===caseDolineZ &&
+            c===caseDolineX
+        )
+            continue;
+
+
+        const positions=[
+            [14,14],
+            [72,14],
+            [14,72],
+            [72,72]
+        ];
+
+
+        const w=
+            100/nombreCases;
+
+
+        for(
+            const p of positions
+        ){
+
+            const b=
+                document.createElement(
+                    "div"
+                );
+
+
+            b.className=
+                "blocCarte";
+
+
+            b.style.left=
+                (
+                    c*w+
+                    p[0]/100*w
+                )+
+                "%";
+
+
+            b.style.top=
+                (
+                    r*w+
+                    p[1]/100*w
+                )+
+                "%";
+
+
+            b.style.width=
+                w*.14+
+                "%";
+
+
+            b.style.height=
+                w*.14+
+                "%";
+
+
+            carte.appendChild(b);
+        }
+    }
+}
+
+
+/* =====================================================
+   ZONE ARBRES CARTE
+===================================================== */
+
+const arbresCarte=
+    document.createElement("div");
+
+
+arbresCarte.style.cssText=
+`
+position:absolute;
+left:${caseDolineX/nombreCases*100}%;
+top:${caseDolineZ/nombreCases*100}%;
+width:${100/nombreCases}%;
+height:${100/nombreCases}%;
+background:#176b2b;
+border-radius:50%;
+z-index:4;
+box-shadow:inset 0 0 20px #073b12;
+`;
+
+
+carte.appendChild(
+    arbresCarte
+);
+
+
+function mettreAJourCarte(){
+
+    joueurCarte.style.left=
+        (
+            (
+                joueur.position.x+
+                DEMI_CUBE
+            )/
+            TAILLE_CUBE*
+            carte.clientWidth
+        )+
+        "px";
+
+
+    joueurCarte.style.top=
+        (
+            (
+                joueur.position.z+
+                DEMI_CUBE
+            )/
+            TAILLE_CUBE*
+            carte.clientHeight
+        )+
+        "px";
+}
+
+
+/* =====================================================
+   RADAR
+===================================================== */
+
+const radarCanvas=
+    document.getElementById(
+        "radarCanvas"
+    );
+
+const radarCtx=
+    radarCanvas.getContext("2d");
+
+
+function mettreAJourRadar(){
+
+    const w=
+        radarCanvas.width;
+
+    const h=
+        radarCanvas.height;
+
+    const cx=w/2;
+    const cy=h/2;
+
+    const rayon=w/2;
+
+
+    radarCtx.clearRect(
+        0,
+        0,
+        w,
+        h
+    );
+
+
+    radarCtx.fillStyle=
+        "#102010";
+
+    radarCtx.beginPath();
+
+    radarCtx.arc(
+        cx,
+        cy,
+        rayon-3,
+        0,
+        Math.PI*2
+    );
+
+    radarCtx.fill();
+
+
+    radarCtx.strokeStyle=
+        "rgba(255,255,255,.18)";
+
+    radarCtx.lineWidth=2;
+
+
+    for(
+        let r=50;
+        r<rayon;
+        r+=50
+    ){
+
+        radarCtx.beginPath();
+
+        radarCtx.arc(
+            cx,
+            cy,
+            r,
+            0,
+            Math.PI*2
+        );
+
+        radarCtx.stroke();
+    }
+
+
+    radarCtx.beginPath();
+    radarCtx.moveTo(cx,0);
+    radarCtx.lineTo(cx,h);
+    radarCtx.stroke();
+
+    radarCtx.beginPath();
+    radarCtx.moveTo(0,cy);
+    radarCtx.lineTo(w,cy);
+    radarCtx.stroke();
+
+
+    const echelle=
+        .14;
+
+
+    function positionRadar(
+        x,
+        z
+    ){
+
+        return {
+
+            x:
+                cx+
+                (
+                    x-
+                    joueur.position.x
+                )*
+                echelle,
+
+            y:
+                cy+
+                (
+                    z-
+                    joueur.position.z
+                )*
+                echelle
+        };
+    }
+
+
+    /* IMMEUBLES */
+
+    radarCtx.fillStyle=
+        "#777";
+
+
+    for(
+        const o of objetsCollision
+    ){
+
+        if(o.type!=="bloc")
+            continue;
+
+
+        const pos=
+            positionRadar(
+                o.x,
+                o.z
+            );
+
+
+        const taille=
+            o.rayon*
+            2*
+            echelle;
+
+
+        if(
+            pos.x+taille<0 ||
+            pos.x-taille>w ||
+            pos.y+taille<0 ||
+            pos.y-taille>h
+        )
+            continue;
+
+
+        radarCtx.fillRect(
+            pos.x-
+            taille/2,
+            pos.y-
+            taille/2,
+            Math.max(
+                3,
+                taille
+            ),
+            Math.max(
+                3,
+                taille
+            )
+        );
+    }
+
+
+    /* ARBRES */
+
+    radarCtx.fillStyle=
+        "#1fd33d";
+
+
+    for(
+        const arbre of arbres
+    ){
+
+        const pos=
+            positionRadar(
+                arbre.x,
+                arbre.z
+            );
+
+
+        if(
+            pos.x<0 ||
+            pos.x>w ||
+            pos.y<0 ||
+            pos.y>h
+        )
+            continue;
+
+
+        radarCtx.beginPath();
+
+        radarCtx.arc(
+            pos.x,
+            pos.y,
+            4,
+            0,
+            Math.PI*2
+        );
+
+        radarCtx.fill();
+    }
+
+
+    /* NPC */
+
+    for(
+        const n of npcs
+    ){
+
+        const p=
+            n.personnage.position;
+
+
+        const pos=
+            positionRadar(
+                p.x,
+                p.z
+            );
+
+
+        if(
+            pos.x<0 ||
+            pos.x>w ||
+            pos.y<0 ||
+            pos.y>h
+        )
+            continue;
+
+
+        radarCtx.fillStyle=
+            "#2196ff";
+
+
+        radarCtx.beginPath();
+
+        radarCtx.arc(
+            pos.x,
+            pos.y,
+            5,
+            0,
+            Math.PI*2
+        );
+
+        radarCtx.fill();
+
+
+        radarCtx.strokeStyle=
+            "white";
+
+        radarCtx.lineWidth=1;
+
+        radarCtx.stroke();
+    }
+
+
+    /* JOUEUR */
+
+    radarCtx.fillStyle=
+        "red";
+
+    radarCtx.strokeStyle=
+        "white";
+
+    radarCtx.lineWidth=3;
+
+
+    radarCtx.beginPath();
+
+    radarCtx.arc(
+        cx,
+        cy,
+        9,
+        0,
+        Math.PI*2
+    );
+
+    radarCtx.fill();
+    radarCtx.stroke();
+
+
+    const angle=
+        joueur.rotation.y;
+
+    radarCtx.strokeStyle=
+        "white";
+
+    radarCtx.lineWidth=3;
+
+    radarCtx.beginPath();
+
+    radarCtx.moveTo(
+        cx,
+        cy
+    );
+
+    radarCtx.lineTo(
+        cx+
+        Math.sin(angle)*
+        17,
+        cy+
+        Math.cos(angle)*
+        17
+    );
+
+    radarCtx.stroke();
+}
+
+
+/* =====================================================
+   CLAVIER
+===================================================== */
+
+window.addEventListener(
+    "keydown",
+    e=>{
+
+        if(
+            e.key.toLowerCase()==="y"
+        ){
+
+            if(!e.repeat)
+                basculerCarte();
+
+            return;
+        }
+
+
+        if(e.key==="Escape"){
+
+            if(carteOuverte){
+
+                carteOuverte=false;
+
+                menuCarte.classList.remove(
+                    "visible"
+                );
+            }
+
+            return;
+        }
+
+
+        if(carteOuverte)
+            return;
+
+
+        if([
+            "ArrowUp",
+            "ArrowDown",
+            "ArrowLeft",
+            "ArrowRight"
+        ].includes(e.code)){
+
+            e.preventDefault();
+
+
+            const now=
+                performance.now();
+
+
+            compteur[e.code]=
+                now-
+                dernier[e.code]>
+                .45*1000
+                ?
+                1
+                :
+                compteur[e.code]+1;
+
+
+            dernier[e.code]=now;
+
+
+            if(
+                compteur[e.code]>=3
+            ){
+
+                course=true;
+
+                compteur[e.code]=0;
+            }
+
+
+            touches[e.code]=true;
+        }
+
+
+        const k=
+            e.key.toLowerCase();
+
+
+        if(k in touches)
+            touches[k]=true;
+    }
+);
+
+
+window.addEventListener(
+    "keyup",
+    e=>{
+
+        if([
+            "ArrowUp",
+            "ArrowDown",
+            "ArrowLeft",
+            "ArrowRight"
+        ].includes(e.code)){
+
+            touches[e.code]=false;
+
+
+            if(
+                !touches.ArrowUp &&
+                !touches.ArrowDown &&
+                !touches.ArrowLeft &&
+                !touches.ArrowRight
+            ){
+
+                course=false;
+            }
+        }
+
+
+        const k=
+            e.key.toLowerCase();
+
+
+        if(k in touches)
+            touches[k]=false;
+    }
+);
+
+
+/* =====================================================
+   BOUCLE
+===================================================== */
+
+const horloge=
+    new THREE.Clock();
+
+
+function animate(){
+
+    requestAnimationFrame(
+        animate
+    );
+
+
+    const delta=
+        Math.min(
+            horloge.getDelta(),
+            .05
+        );
+
+
+    changerVue();
+
+    controlerCamera();
+
+
+    if(!carteOuverte){
+
+        deplacerJoueur(delta);
+
+        deplacerNPC(delta);
+
+        suivreJoueur();
+
+    }else{
+
+        mettreAJourCarte();
+    }
+
+
+    mettreAJourRadar();
+
+
+    renderer.render(
+        scene,
+        camera
+    );
+}
+
+
+animate();
+
+
+/* =====================================================
+   REDIMENSIONNEMENT
+===================================================== */
+
+addEventListener(
+    "resize",
+    ()=>{
+
+        camera.aspect=
+            innerWidth/
+            innerHeight;
+
+
+        camera.updateProjectionMatrix();
+
+
+        renderer.setSize(
+            innerWidth,
+            innerHeight
+        );
+
+
+        if(carteOuverte)
+            mettreAJourCarte();
+    }
+);
+
+</script>
+
+</body>
+</html>
